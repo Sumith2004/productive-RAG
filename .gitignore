@@ -1,0 +1,10 @@
+.venv/
+.env
+sessions/
+dbv1/
+dbv2/
+__pycache__/
+*.pyc
+chunks_export.json
+rag_results.json
+docs/*.pdf
