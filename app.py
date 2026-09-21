@@ -63,18 +63,30 @@ def load_session_documents(slug):
     return [Document(page_content=d["page_content"], metadata=d["metadata"]) for d in docs_data]
 
 
-@st.cache_resource
+def delete_session(slug):
+    import shutil
+
+    session_dir = os.path.join(SESSIONS_DIR, slug)
+    if os.path.exists(session_dir):
+        shutil.rmtree(session_dir)
+
+    manifest = [s for s in load_manifest() if s["slug"] != slug]
+    save_manifest(manifest)
+
+
+@st.cache_resource(show_spinner=False)
 def load_embedding_model():
     return rag_pipeline.get_embedding_model()
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def load_llm():
     return rag_pipeline.get_llm()
 
 
 def run_ingestion(uploaded_file, llm, embedding_model, persist_directory, progress_callback=None):
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+    suffix = os.path.splitext(uploaded_file.name)[1]
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(uploaded_file.read())
         tmp_path = tmp.name
 
@@ -187,8 +199,8 @@ def show_document_viewer():
 
 # --- UI ---
 
-st.set_page_config(page_title="RAG Chatbot")
-st.title("RAG Chatbot")
+st.set_page_config(page_title="Productive RAG")
+st.title("Welcome to Productive RAG")
 
 if "stage" not in st.session_state:
     st.session_state.stage = "start"  # start -> naming -> uploading -> ready
@@ -208,13 +220,22 @@ if "messages" not in st.session_state:
 llm = load_llm()
 embedding_model = load_embedding_model()
 
-if st.session_state.stage == "start":
+# --- Sidebar: list of already-created chatbots + button to create a new one ---
+with st.sidebar:
+    st.subheader("Your chatbots")
     existing_sessions = load_manifest()
 
-    if existing_sessions:
-        st.subheader("Your chatbots")
-        for session in existing_sessions:
-            if st.button(session["name"], key=f"open_{session['slug']}", use_container_width=True):
+    for session in existing_sessions:
+        is_active = session["slug"] == st.session_state.slug
+
+        col_open, col_delete = st.columns([4, 1])
+        with col_open:
+            if st.button(
+                session["name"],
+                key=f"open_{session['slug']}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary",
+            ):
                 db = rag_pipeline.load_vector_store(session["chroma_dir"], embedding_model)
                 st.session_state.db = db
                 st.session_state.documents = load_session_documents(session["slug"])
@@ -224,22 +245,53 @@ if st.session_state.stage == "start":
                 st.session_state.messages = []
                 st.session_state.stage = "ready"
                 st.rerun()
-        st.divider()
+        with col_delete:
+            if st.button("", key=f"delete_{session['slug']}", icon=":material/delete:"):
+                delete_session(session["slug"])
+                if is_active:
+                    st.session_state.stage = "start"
+                    st.session_state.name = ""
+                    st.session_state.slug = ""
+                    st.session_state.db = None
+                    st.session_state.documents = None
+                    st.session_state.filename = ""
+                    st.session_state.messages = []
+                st.rerun()
 
+    st.divider()
+    if st.button("+ New chatbot", use_container_width=True):
+        st.session_state.stage = "naming"
+        st.session_state.name = ""
+        st.session_state.slug = ""
+        st.session_state.db = None
+        st.session_state.documents = None
+        st.session_state.filename = ""
+        st.session_state.messages = []
+        st.rerun()
+
+if st.session_state.stage == "start":
+    st.write("Select a chatbot from the sidebar, or create a new one.")
     if st.button("Create"):
         st.session_state.stage = "naming"
         st.rerun()
 
 elif st.session_state.stage == "naming":
     name = st.text_input("Name this chatbot")
-    if st.button("Enter", disabled=not name.strip()):
-        st.session_state.name = name.strip()
-        st.session_state.stage = "uploading"
-        st.rerun()
+    if st.button("Enter"):
+        cleaned = name.strip()
+        existing_names = {s["name"].lower() for s in load_manifest()}
+        if not cleaned:
+            st.warning("Please enter a name.")
+        elif cleaned.lower() in existing_names:
+            st.warning(f"A chatbot named '{cleaned}' already exists. Choose a different name.")
+        else:
+            st.session_state.name = cleaned
+            st.session_state.stage = "uploading"
+            st.rerun()
 
 elif st.session_state.stage == "uploading":
-    st.subheader(f"{st.session_state.name}: upload a PDF")
-    uploaded_file = st.file_uploader("Choose a PDF file", type=["pdf"])
+    st.subheader(f"{st.session_state.name}: upload a document")
+    uploaded_file = st.file_uploader("Choose a PDF or DOCX file", type=["pdf", "docx"])
 
     if st.button("Upload", disabled=uploaded_file is None):
         progress_bar = st.progress(0.0)

@@ -14,7 +14,7 @@ from langchain_core.messages import HumanMessage
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from unstructured.chunking.title import chunk_by_title
-from unstructured.partition.pdf import partition_pdf
+from unstructured.partition.auto import partition
 
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
@@ -28,10 +28,10 @@ def get_llm():
     return ChatGroq(model=GROQ_MODEL, temperature=0)
 
 
-# --- Step 1: Partition PDF into atomic elements (text, tables, images) ---
+# --- Step 1: Partition document (PDF or DOCX) into atomic elements (text, tables, images) ---
 
 def partition_document(file_path: str):
-    return partition_pdf(
+    return partition(
         filename=file_path,
         strategy="hi_res",
         infer_table_structure=True,
