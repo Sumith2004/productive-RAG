@@ -24,8 +24,19 @@ def get_embedding_model():
     return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
 
+def get_groq_api_key():
+    key = os.getenv("GROQ_API_KEY")
+    if key:
+        return key
+    try:
+        import streamlit as st
+        return st.secrets["GROQ_API_KEY"]
+    except Exception:
+        return None
+
+
 def get_llm():
-    return ChatGroq(model=GROQ_MODEL, temperature=0)
+    return ChatGroq(model=GROQ_MODEL, temperature=0, api_key=get_groq_api_key())
 
 
 # --- Step 1: Partition document (PDF or DOCX) into atomic elements (text, tables, images) ---
